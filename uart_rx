@@ -1,0 +1,103 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+-- Note: IEEE.STD_LOGIC_ARITH and UNSIGNED are older libraries. 
+-- For modern VHDL, numeric_std is generally preferred, but this works fine for legacy/student projects.
+use IEEE.STD_LOGIC_ARITH.ALL;
+use IEEE.STD_LOGIC_UNSIGNED.ALL;
+
+entity uart_rx is
+    Generic( 
+        C_CLKFREQ  : integer := 100_000_000; -- System clock frequency in Hz
+        C_BAUDRATE : integer := 9600         -- Desired UART baud rate
+    );
+    Port ( 
+        rx_data     : out STD_LOGIC_VECTOR (7 downto 0); -- 8-bit received data output
+        rx_data_rdy : out STD_LOGIC;                    -- Pulse signal indicating data is ready
+        uart_rx     : in  STD_LOGIC;                    -- Physical UART RX input line
+        rst         : in  STD_LOGIC;                    -- Active high synchronous reset
+        clk         : in  STD_LOGIC                     -- System clock
+    );
+end uart_rx;
+
+architecture Behavioral of uart_rx is
+
+    -- Constant for the number of clock cycles per UART bit
+    constant C_BITTIMERLIM_RX : integer := (C_CLKFREQ / C_BAUDRATE);
+     
+    -- Internal Signals
+    signal s_start_rx     : std_logic := '0'; -- High when a reception is in progress
+    signal s_bittimer_rx  : integer range 0 to C_BITTIMERLIM_RX := 0; -- Counter for baud rate timing
+    signal counter_rx     : integer range 0 to 9 := 0; -- Counter to track the number of received bits (Start + 8 Data + Stop)
+    signal s_end_rx       : std_logic; -- Pulse to indicate the end of a transmission frame
+    signal s_rx_data_rdy  : std_logic := '0'; -- Internal ready flag
+    signal s_rx_data      : std_logic_vector(9 downto 0) := (others => '0'); -- Buffer to hold Start, Data, and Stop bits
+     
+begin
+
+    RECEIVE_PROCESS : process(clk)
+    begin
+        if(rising_edge(clk)) then
+            -- Synchronous Reset: Reset all internal signals to default states
+            if(rst = '1') then
+                s_start_rx    <= '0';
+                s_rx_data     <= (others => '0');
+                counter_rx    <= 0;
+                s_bittimer_rx <= 0;
+                rx_data_rdy   <= '0';     
+
+            -- Detection of Start Bit: Line goes from 1 to 0
+            elsif(uart_rx = '0' and s_start_rx = '0' and s_bittimer_rx - 1 <= 0) then    
+                s_start_rx    <= '1';                
+                -- Offset by half a bit period to sample in the middle of the bit for stability
+                s_bittimer_rx <= C_BITTIMERLIM_RX / 2;
+                s_rx_data     <= (others => '0');
+                rx_data_rdy   <= '0';                
+
+            -- Wait for the start bit sampling point
+            elsif(s_bittimer_rx /= 0 and counter_rx = 0) then          
+                s_bittimer_rx <= s_bittimer_rx - 1;   
+            end if;   
+
+            -- Reception Logic
+            if(s_start_rx = '1' and s_bittimer_rx - 1 <= 0) then
+                -- Shift-in the incoming bit (LSB first)
+                s_rx_data     <= uart_rx & s_rx_data(9 downto 1); 
+                s_bittimer_rx <= C_BITTIMERLIM_RX; -- Reset timer for the next full bit period
+                
+                -- Frame bit counting
+                if(counter_rx = 9 and uart_rx = '1') then
+                    -- Stop bit detected successfully
+                    s_start_rx <= '0';
+                    counter_rx <= 0;
+                    s_end_rx   <= '1';
+                elsif(counter_rx = 9 and uart_rx = '0') then
+                    -- Framing error (missing stop bit), reset reception
+                    s_start_rx <= '0';
+                    counter_rx <= 0;
+                else        
+                    counter_rx <= counter_rx + 1;     
+                end if; 
+
+            elsif(s_end_rx = '1') then
+                -- Signal that valid data has been fully received
+                rx_data_rdy   <= '1';
+                s_rx_data_rdy <= '1';
+                s_end_rx      <= '0'; 
+
+            elsif(s_rx_data_rdy = '1') then
+                -- Clear ready flag on the next clock cycle
+                s_rx_data_rdy <= '0';
+                rx_data_rdy   <= '0';                
+
+            elsif(s_bittimer_rx /= 0 and rst = '0') then          
+                -- Decrement bit timer
+                s_bittimer_rx <= s_bittimer_rx - 1;                                             
+            end if;                      
+               
+        end if;
+    end process;
+
+    -- Map internal buffer bits to output (ignoring start and stop bits)
+    rx_data <= s_rx_data(8 downto 1);
+
+end Behavioral;
