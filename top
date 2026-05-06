@@ -1,0 +1,318 @@
+
+library iEEE;
+use iEEE.std_logic_1164.all;
+
+package ram_pkg is
+    function clogb2 (depth: in natural) return integer;
+end ram_pkg;
+
+package body ram_pkg is
+    -- Function to calculate bit-width based on RAM depth (Logarithm base 2)
+    function clogb2( depth : natural) return integer is
+        variable temp    : integer := depth;
+        variable ret_val : integer := 0;
+    begin
+        while temp > 1 loop
+            ret_val := ret_val + 1;
+            temp    := temp / 2;
+        end loop;
+        return ret_val;
+    end function;
+end package body ram_pkg;
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use work.ram_pkg.all;
+
+entity top is
+    generic (
+        c_clkfreq        : integer := 100_000_000;
+        c_baudrate       : integer := 9600;
+        c_stopbit        : integer := 2;
+        RAM_WIDTH        : integer := 8;      -- Specify RAM data width
+        RAM_DEPTH        : integer := 16;     -- Specify RAM depth (number of entries)
+        RAM_PERFORMANCE  : string  := "LOW_LATENCY"; 
+        C_RAM_TYPE       : string  := "block" 
+    );
+    port(
+        clk         : in std_logic;
+        sw_1        : in std_logic; 
+        sw_2        : in std_logic; 
+        sw_3        : in std_logic;  
+        sw_4        : in std_logic;    
+        sw_5        : in std_logic;
+        sw_6        : in std_logic; 
+        sw_7        : in std_logic;
+        sw_8        : in std_logic; 
+        sw_9        : in std_logic;
+        sw_10       : in std_logic;
+        uart_rx_p   : in std_logic;    
+        alt_buton   : in std_logic; -- Count from preset to 99
+        ust_buton   : in std_logic; -- Count up to preset value
+        orta_buton  : in std_logic; -- Global reset
+        seven_seg   : out std_logic_vector(7 downto 0); -- Segment cathode values
+        anode_o     : out std_logic_vector(7 downto 0)  -- Anode control (0: ON, 1: OFF)
+    );
+end top;
+
+architecture Behavioral of top is
+
+    -- Component Declarations
+    component led_atama is 
+        port(
+            sayi  : in  std_logic_vector(3 downto 0);
+            led_s : out std_logic_vector(7 downto 0));
+    end component;
+
+    component buton is 
+        port(
+            clk         : in std_logic; 
+            sw_1, sw_2, sw_3, sw_4, sw_5 : in std_logic;
+            sw_6, sw_7, sw_8, sw_9, sw_10 : in std_logic;
+            sw_1_veri, sw_2_veri, sw_3_veri, sw_4_veri, sw_5_veri : in std_logic_vector(7 downto 0);
+            sw_6_veri, sw_7_veri, sw_8_veri, sw_9_veri, sw_10_veri : in std_logic_vector(7 downto 0);
+            alt_buton   : in std_logic;
+            ust_buton   : in std_logic;
+            orta_buton  : in std_logic;
+            ram_data_i  : in std_logic_vector(7 downto 0);
+            birler_o    : out std_logic_vector(3 downto 0);
+            onlar_o     : out std_logic_vector(3 downto 0));
+    end component;
+
+    component block_ram is
+        generic (
+            RAM_WIDTH : integer; RAM_DEPTH : integer;
+            RAM_PERFORMANCE : string; C_RAM_TYPE : string);
+        port (
+            addra : in std_logic_vector((clogb2(RAM_DEPTH)-1) downto 0);
+            dina  : in std_logic_vector(RAM_WIDTH-1 downto 0);
+            clka  : in std_logic;
+            wea   : in std_logic;
+            douta : out std_logic_vector(RAM_WIDTH-1 downto 0));
+    end component;
+
+    component uart_rx is
+        Generic( C_CLKFREQ : integer; C_BAUDRATE : integer);
+        Port ( rx_data : out STD_LOGIC_VECTOR (7 downto 0);
+               rx_data_rdy : out STD_LOGIC; uart_rx : in STD_LOGIC;
+               rst : in STD_LOGIC; clk : in STD_LOGIC);
+    end component;
+
+    component debounce is 
+        generic ( c_clkfreq : integer; c_debtime : integer; c_ilk : std_logic);
+        port ( clk : in std_logic; signal_i : in std_logic; signal_o : out std_logic); 
+    end component;     
+
+    -- Constant Definitions
+    constant c_1sec_lim : integer := c_clkfreq;      -- Limit for 1 second count
+    constant c_1ms_lim  : integer := c_clkfreq/1000; -- Limit for 1 millisecond count
+
+    -- Signal Definitions
+    signal alt_buton_deb, ust_buton_deb, orta_buton_deb : std_logic := '0';
+    signal alt_buton_deb_reg, ust_buton_deb_reg : std_logic := '0';
+    signal count_enable_alt, count_enable_ust : std_logic := '0';
+    signal pulse_1sec_alt, pulse_1sec_ust : std_logic := '0';
+    
+    signal saniye_birler, saniye_onlar, tur_sayisi : std_logic_vector(3 downto 0) := (others => '0');
+    signal saniye_birler_7, saniye_onlar_7, tur_7 : std_logic_vector(7 downto 0) := (others => '1');
+    
+    signal timer_1sec_alt : integer range 0 to c_1sec_lim := c_1sec_lim;
+    signal timer_1sec_ust : integer range 0 to c_1sec_lim := c_1sec_lim;
+    
+    signal anodes : std_logic_vector(7 downto 0) := "11111110";
+    signal timer_1ms : integer range 0 to c_1ms_lim := c_1ms_lim;
+    signal anode_sel : integer range 0 to 2 := 0;
+
+    signal veri_s  : std_logic_vector(7 downto 0); 
+    signal rx_data : STD_LOGIC_VECTOR (7 downto 0) := (others => '0');
+    signal rx_data_rdy, rst, wea : STD_LOGIC := '0';
+    
+    signal dina : std_logic_vector(RAM_WIDTH-1 downto 0);
+    signal databuffer : std_logic_vector(23 downto 0) := (others => '0');
+    signal ram_addra_i : std_logic_vector(3 downto 0);
+    
+    -- Signals to hold data for each switch address
+    signal sw_1_veri_s, sw_2_veri_s, sw_3_veri_s, sw_4_veri_s, sw_5_veri_s : std_logic_vector(7 downto 0) := (others => '0');
+    signal sw_6_veri_s, sw_7_veri_s, sw_8_veri_s, sw_9_veri_s, sw_10_veri_s : std_logic_vector(7 downto 0) := (others => '0');
+
+    type states is (S_IDLE, S_WRITE);
+    signal state : states := S_IDLE;
+
+begin
+
+    -- Debounce Instances
+    alt_deb : debounce generic map(c_clkfreq => c_clkfreq, c_debtime => 1000, c_ilk => '0')
+              port map(clk => clk, signal_i => alt_buton, signal_o => alt_buton_deb);
+
+    ust_deb : debounce generic map(c_clkfreq => c_clkfreq, c_debtime => 1000, c_ilk => '0')
+              port map(clk => clk, signal_i => ust_buton, signal_o => ust_buton_deb);
+
+    orta_deb : debounce generic map(c_clkfreq => c_clkfreq, c_debtime => 1000, c_ilk => '0')
+               port map(clk => clk, signal_i => orta_buton, signal_o => orta_buton_deb);
+
+    -- Counter and Logic Component
+    saniye_sayma_port : buton
+        port map(
+            clk => clk, sw_1 => sw_1, sw_2 => sw_2, sw_3 => sw_3, sw_4 => sw_4, sw_5 => sw_5,
+            sw_6 => sw_6, sw_7 => sw_7, sw_8 => sw_8, sw_9 => sw_9, sw_10 => sw_10,
+            sw_1_veri => sw_1_veri_s, sw_2_veri => sw_2_veri_s, sw_3_veri => sw_3_veri_s,
+            sw_4_veri => sw_4_veri_s, sw_5_veri => sw_5_veri_s, sw_6_veri => sw_6_veri_s,
+            sw_7_veri => sw_7_veri_s, sw_8_veri => sw_8_veri_s, sw_9_veri => sw_9_veri_s,
+            sw_10_veri => sw_10_veri_s, 
+            alt_buton => pulse_1sec_alt, -- Triggered every 1 second
+            ust_buton => pulse_1sec_ust, -- Triggered every 1 second
+            orta_buton => orta_buton_deb,
+            ram_data_i => veri_s,
+            birler_o => saniye_birler, onlar_o => saniye_onlar);
+
+    -- UART RX Instance
+    uartrx_d : uart_rx generic map(C_CLKFREQ => c_clkfreq, C_BAUDRATE => c_baudrate)
+               port map(rx_data => rx_data, rx_data_rdy => rx_data_rdy, uart_rx => uart_rx_p, rst => rst, clk => clk);
+
+    -- RAM Instance
+    ram_b : block_ram generic map(RAM_WIDTH => RAM_WIDTH, RAM_DEPTH => RAM_DEPTH, 
+                                  RAM_PERFORMANCE => RAM_PERFORMANCE, C_RAM_TYPE => C_RAM_TYPE)
+            port map(addra => ram_addra_i, dina => dina, clka => clk, wea => wea, douta => veri_s);
+
+    -- 7-Segment Decoders
+    saniye_birler_seven_seg: led_atama port map(sayi => saniye_birler, led_s => saniye_birler_7);
+    saniye_onlar_seven_seg: led_atama port map(sayi => saniye_onlar, led_s => saniye_onlar_7);
+    saniye_tur_seven_seg: led_atama port map(sayi => tur_sayisi, led_s => tur_7);
+
+    -- RAM Data Management Process
+    P_block_ram : process (clk) begin
+        if (rising_edge(clk)) then           
+            case state is                
+                when S_IDLE =>
+                    wea <= '0'; -- No writing in IDLE
+                    if (rx_data_rdy = '1') then
+                        -- Shift incoming byte into buffer
+                        databuffer <= databuffer(15 downto 0) & rx_data; 
+                    end if;                    
+                    -- Check for start command byte (0x0A)
+                    if (databuffer(23 downto 16) = x"0A") then 
+                        state <= S_WRITE;
+                    end if;
+                when S_WRITE =>  
+                    ram_addra_i <= databuffer(11 downto 8); -- Set target address
+                    dina        <= databuffer(7 downto 0);  -- Set input data
+                    wea         <= '1';                     -- Enable RAM write
+                    databuffer  <= (others => '0');
+                    state       <= S_IDLE;
+                when others =>
+                    state <= S_IDLE;
+            end case;
+
+            -- Reset logic
+            if (orta_buton_deb = '1') then
+                state <= S_IDLE;
+                databuffer <= (others => '0');
+                wea <= '0';
+            end if;
+        end if;
+    end process;
+
+    -- Update switch data signals from RAM output based on address
+    P_sw : process (clk) begin
+        if (rising_edge(clk)) then
+            if( ram_addra_i = x"0") then sw_1_veri_s <= veri_s;   
+            elsif( ram_addra_i = x"1") then sw_2_veri_s <= veri_s;  
+            elsif( ram_addra_i = x"2") then sw_3_veri_s <= veri_s;  
+            elsif( ram_addra_i = x"3") then sw_4_veri_s <= veri_s;  
+            elsif( ram_addra_i = x"4") then sw_5_veri_s <= veri_s;  
+            elsif( ram_addra_i = x"5") then sw_6_veri_s <= veri_s;
+            elsif( ram_addra_i = x"6") then sw_7_veri_s <= veri_s;  
+            elsif( ram_addra_i = x"7") then sw_8_veri_s <= veri_s; 
+            elsif( ram_addra_i = x"8") then sw_9_veri_s <= veri_s; 
+            elsif( ram_addra_i = x"9") then sw_10_veri_s <= veri_s;        
+            end if; 
+        end if;
+    end process;
+
+    -- Toggle and Timer Process for Down Button
+    P_alt_but : process (clk) begin
+        if (rising_edge(clk)) then
+            alt_buton_deb_reg <= alt_buton_deb;
+            -- Toggle counting on rising edge of debounced button
+            if (alt_buton_deb = '1' and alt_buton_deb_reg = '0') then
+                count_enable_alt <= not count_enable_alt;
+            end if;
+
+            pulse_1sec_alt <= '0';	
+            if(count_enable_alt = '1') then
+                if (timer_1sec_alt <= 0) then	
+                    timer_1sec_alt <= c_1sec_lim - 1;
+                    pulse_1sec_alt <= '1';
+                else
+                    timer_1sec_alt <= timer_1sec_alt - 1; 
+                end if;	
+            end if;
+
+            if (orta_buton_deb = '1') then	
+                timer_1sec_alt <= c_1sec_lim - 1;
+            end if;   
+        end if;
+    end process;
+
+    -- Toggle and Timer Process for Up Button
+    P_ust_but : process (clk) begin
+        if (rising_edge(clk)) then
+            ust_buton_deb_reg <= ust_buton_deb;
+            if (ust_buton_deb = '1' and ust_buton_deb_reg = '0') then
+                count_enable_ust <= not count_enable_ust;
+            end if;
+
+            pulse_1sec_ust <= '0';	
+            if(count_enable_ust = '1') then
+                if (timer_1sec_ust <= 0) then	
+                    timer_1sec_ust <= c_1sec_lim - 1;
+                    pulse_1sec_ust <= '1';
+                else
+                    timer_1sec_ust <= timer_1sec_ust - 1; 
+                end if;	
+            end if;
+
+            if (orta_buton_deb = '1') then	
+                timer_1sec_ust <= c_1sec_lim - 1;
+            end if;   
+        end if;
+    end process; 
+
+    -- Anode Selection for Display Multiplexing (Every 1ms)
+    P_anodes : process (clk) begin 
+        if rising_edge(clk) then
+            anodes(7 downto 5) <= "111"; -- Keep unused displays off
+            if (timer_1ms <= 0) then
+                timer_1ms <= c_1ms_lim;
+                case anode_sel is
+                    when 0 => anodes(4 downto 0) <= "11110"; -- Select digit 0
+                    when 1 => anodes(4 downto 0) <= "11101"; -- Select digit 1
+                    when 2 => anodes(4 downto 0) <= "01111"; -- Select digit 4
+                end case;
+
+                if anode_sel = 2 then anode_sel <= 0;
+                else anode_sel <= anode_sel + 1;
+                end if;
+            else
+                timer_1ms <= timer_1ms - 1;
+            end if;
+        end if;
+    end process;
+
+    -- Cathode Mapping based on active Anode
+    P_cathodes : process (clk) begin 
+        if (rising_edge(clk)) then
+            if (anodes(0) = '0') then
+                seven_seg <= saniye_birler_7;
+            elsif (anodes(1) = '0') then
+                seven_seg <= saniye_onlar_7;
+            elsif (anodes(4) = '0') then
+                 seven_seg <= tur_7;
+            else
+                 seven_seg <= (others => '1'); -- Turn off all segments     
+            end if;
+        end if;
+    end process;
+
+    anode_o <= anodes;       
+end Behavioral;
