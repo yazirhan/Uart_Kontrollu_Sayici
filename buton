@@ -1,0 +1,159 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.STD_LOGIC_ARITH.ALL;
+use IEEE.STD_LOGIC_UNSIGNED.ALL;
+
+entity buton is
+    port(
+        clk         : in std_logic; 
+        sw_1        : in std_logic; 
+        sw_2        : in std_logic; 
+        sw_3        : in std_logic; 
+        sw_4        : in std_logic; 
+        sw_5        : in std_logic; 
+        sw_6        : in std_logic;
+        sw_7        : in std_logic;
+        sw_8        : in std_logic;
+        sw_9        : in std_logic;
+        sw_10       : in std_logic;
+        sw_1_veri   : in std_logic_vector(7 downto 0); -- in
+        sw_2_veri   : in std_logic_vector(7 downto 0);
+        sw_3_veri   : in std_logic_vector(7 downto 0);
+        sw_4_veri   : in std_logic_vector(7 downto 0);
+        sw_5_veri   : in std_logic_vector(7 downto 0);
+        sw_6_veri   : in std_logic_vector(7 downto 0);
+        sw_7_veri   : in std_logic_vector(7 downto 0);
+        sw_8_veri   : in std_logic_vector(7 downto 0);
+        sw_9_veri   : in std_logic_vector(7 downto 0);
+        sw_10_veri  : in std_logic_vector(7 downto 0);
+        alt_buton   : in std_logic; -- Count up from preset to 99
+        ust_buton   : in std_logic; -- Count up from 0 to preset
+        orta_buton  : in std_logic; -- Reset button
+        ram_data_i  : in std_logic_vector(7 downto 0);
+        birler_o    : out std_logic_vector(3 downto 0); -- Ones digit output
+        onlar_o     : out std_logic_vector(3 downto 0)  -- Tens digit output
+    ); 
+end buton;
+
+architecture Behavioral of buton is
+    
+    signal birler      : std_logic_vector (3 downto 0) := x"0"; -- Current ones digit
+    signal onlar       : std_logic_vector (3 downto 0) := x"0"; -- Current tens digit
+    signal birler_r    : std_logic_vector (3 downto 0) := x"0"; -- Registered ones limit
+    signal onlar_r     : std_logic_vector (3 downto 0) := x"0"; -- Registered tens limit
+    signal ust_sayma   : std_logic := '0';  -- State for counting up to limit
+
+begin
+
+    process (clk) 
+    begin
+        if (rising_edge(clk)) then
+            -- RESET AND PRESET LOGIC (Priority)
+            if(orta_buton = '1') then 
+                birler    <= x"0";    
+                onlar     <= x"0";
+                birler_r  <= x"0";
+                onlar_r   <= x"0";
+                ust_sayma <= '0';
+                
+            elsif(sw_1 = '1') then  
+                birler    <= sw_1_veri(3 downto 0);
+                onlar     <= sw_1_veri(7 downto 4);
+                birler_r  <= sw_1_veri(3 downto 0);
+                onlar_r   <= sw_1_veri(7 downto 4);
+                ust_sayma <= '0';
+            elsif(sw_2 = '1') then  
+                birler    <= sw_2_veri(3 downto 0);
+                onlar     <= sw_2_veri(7 downto 4);
+                birler_r  <= sw_2_veri(3 downto 0);
+                onlar_r   <= sw_2_veri(7 downto 4);
+                ust_sayma <= '0'; 
+            elsif(sw_3 = '1') then   
+                birler    <= sw_3_veri(3 downto 0);
+                onlar     <= sw_3_veri(7 downto 4);
+                birler_r  <= sw_3_veri(3 downto 0);
+                onlar_r   <= sw_3_veri(7 downto 4);
+                ust_sayma <= '0'; 
+            elsif(sw_4 = '1') then   
+                birler    <= sw_4_veri(3 downto 0);
+                onlar     <= sw_4_veri(7 downto 4);
+                birler_r  <= sw_4_veri(3 downto 0);
+                onlar_r   <= sw_4_veri(7 downto 4);
+                ust_sayma <= '0';
+            elsif(sw_5 = '1') then   
+                birler    <= sw_5_veri(3 downto 0);
+                onlar     <= sw_5_veri(7 downto 4);
+                birler_r  <= sw_5_veri(3 downto 0);
+                onlar_r   <= sw_5_veri(7 downto 4);
+                ust_sayma <= '0'; 
+            elsif(sw_6 = '1') then   
+                birler    <= sw_6_veri(3 downto 0);
+                onlar     <= sw_6_veri(7 downto 4);
+                birler_r  <= sw_6_veri(3 downto 0);
+                onlar_r   <= sw_6_veri(7 downto 4);
+                ust_sayma <= '0';
+            elsif(sw_7 = '1') then   
+                birler    <= sw_7_veri(3 downto 0);
+                onlar     <= sw_7_veri(7 downto 4);
+                birler_r  <= sw_7_veri(3 downto 0);
+                onlar_r   <= sw_7_veri(7 downto 4);
+                ust_sayma <= '0';  
+            elsif(sw_8 = '1') then   
+                birler    <= sw_8_veri(3 downto 0);
+                onlar     <= sw_8_veri(7 downto 4);
+                birler_r  <= sw_8_veri(3 downto 0);
+                onlar_r   <= sw_8_veri(7 downto 4);
+                ust_sayma <= '0';  
+            elsif(sw_9 = '1') then   
+                birler    <= sw_9_veri(3 downto 0);
+                onlar     <= sw_9_veri(7 downto 4);
+                birler_r  <= sw_9_veri(3 downto 0);
+                onlar_r   <= sw_9_veri(7 downto 4);
+                ust_sayma <= '0';  
+            elsif(sw_10 = '1') then   
+                birler    <= sw_10_veri(3 downto 0);
+                onlar     <= sw_10_veri(7 downto 4);
+                birler_r  <= sw_10_veri(3 downto 0);
+                onlar_r   <= sw_10_veri(7 downto 4);
+                ust_sayma <= '0';
+
+            -- COUNTING LOGIC
+            elsif(alt_buton = '1') then  -- Count from preset up to 99
+                if(birler = 9) then
+                    if(onlar = 9) then 
+                        birler <= x"9"; 
+                        onlar  <= x"9";
+                    else
+                        birler <= x"0";
+                        onlar  <= onlar + 1;
+                    end if; 
+                else
+                    birler <= birler + 1;
+                end if;
+
+            elsif(ust_buton = '1') then -- Count from 0 up to preset values (birler_r, onlar_r)
+                if(ust_sayma = '0') then
+                    birler <= x"0";
+                    onlar  <= x"0";
+                    ust_sayma <= '1';
+                elsif (ust_sayma = '1') then
+                    if (birler = birler_r and onlar = onlar_r) then
+                        -- Keep values at limit
+                    else
+                        if (birler = 9) then
+                            birler <= x"0";
+                            onlar  <= onlar + 1;
+                        else
+                            birler <= birler + 1;
+                        end if;
+                    end if;
+                end if;   
+            end if;                                         
+        end if;
+    end process;
+
+    -- Concurrent assignments for output
+    birler_o <= birler; 
+    onlar_o  <= onlar;  
+
+end Behavioral;
