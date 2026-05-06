@@ -1,0 +1,123 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+
+entity debounce is
+generic (
+    c_clkfreq   : integer := 100_000_000; -- System clock frequency (e.g., 100 MHz)
+    c_debtime   : integer := 1000;        -- Debounce threshold value to adjust timing
+    c_ilk       : std_logic := '0'        -- Initial power-up value for the output
+);
+port (
+    clk         : in std_logic;           -- System clock input
+    signal_i    : in std_logic;           -- Raw input signal from the button/switch
+    signal_o    : out std_logic           -- Filtered (debounced) output signal
+);
+end debounce;
+
+architecture Behavioral of debounce is
+
+-- Constant to define the timer limit based on clock frequency and desired debounce time
+constant c_timerlim : integer := c_clkfreq / c_debtime;
+
+signal timer        : integer range 0 to c_timerlim := 0;
+signal timer_en     : std_logic := '0';
+signal timer_tick   : std_logic := '0';
+
+-- State machine definition for the debouncing logic
+type t_state is (S_ilk, S_sifir, S_sifirbir, S_bir, S_birsifir);
+signal state : t_state := S_ilk;
+
+begin
+
+-- Main Finite State Machine (FSM) Process
+process (clk) begin
+if (rising_edge(clk)) then
+
+    case state is
+    
+        when S_ilk => 
+            -- Initialization state: Transition based on the 'c_ilk' generic value
+            if (c_ilk = '0') then
+                state   <= S_sifir;
+            else
+                state   <= S_bir;
+            end if;
+        
+        when S_sifir => 
+            -- Stable Low state: Output is '0'. If input goes High, move to transition state.
+            signal_o    <= '0';
+        
+            if (signal_i = '1') then
+                state   <= S_sifirbir;
+            end if;
+        
+        when S_sifirbir => 
+            -- Transition from Low to High: Output remains '0'. Enable timer to wait for stable signal.
+            signal_o    <= '0'; 
+            timer_en    <= '1';
+            
+            -- If timer reaches the limit, confirm the signal is stable and move to 'S_bir'
+            if (timer_tick = '1') then
+                state       <= S_bir;
+                timer_en    <= '0';
+            end if;
+            
+            -- If signal drops back to '0' before timer ends (glitch), return to 'S_sifir'
+            if (signal_i = '0') then
+                state       <= S_sifir;
+                timer_en    <= '0';
+            end if;
+        
+        when S_bir => 
+            -- Stable High state: Output is '1'. If input goes Low, move to transition state.
+            signal_o    <= '1';
+        
+            if (signal_i = '0') then
+                state   <= S_birsifir;
+            end if;     
+        
+        when S_birsifir => 
+            -- Transition from High to Low: Output remains '1'. Enable timer to filter noise.
+            signal_o    <= '1';
+            timer_en    <= '1';
+            
+            -- If timer reaches the limit, confirm the signal is stable and move to 'S_sifir'
+            if (timer_tick = '1') then
+                state       <= S_sifir;
+                timer_en    <= '0';
+            end if;
+            
+            -- If signal bounces back to '1' before timer ends, return to 'S_bir'
+            if (signal_i = '1') then
+                state       <= S_bir;
+                timer_en    <= '0';
+            end if;     
+    
+    end case;
+
+end if;
+end process;
+
+-- Timer Process for Debounce Duration
+P_timer : process (clk) begin 
+if (rising_edge(clk)) then
+
+    if (timer_en = '1') then
+        -- Increment timer while enabled. Trigger 'timer_tick' when limit is reached.
+        if (timer = c_timerlim-1) then
+            timer_tick  <= '1';
+            timer       <= 0;
+        else
+            timer_tick  <= '0';
+            timer       <= timer + 1;
+        end if;
+    else
+        -- Reset timer and tick when timer is not enabled
+        timer       <= 0;
+        timer_tick  <= '0';
+    end if;
+
+end if;
+end process;
+
+end Behavioral;
