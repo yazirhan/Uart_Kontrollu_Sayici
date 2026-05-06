@@ -1,0 +1,147 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+
+-- Uncomment the following library declaration if using
+-- arithmetic functions with Signed or Unsigned values
+--use IEEE.NUMERIC_STD.ALL;
+
+-- Uncomment the following library declaration if instantiating
+-- any Xilinx leaf cells in this code.
+--library UNISIM;
+--use UNISIM.VComponents.all;
+
+entity top_tb is
+--  Port ( );
+end top_tb;
+
+architecture Behavioral of top_tb is
+component top is
+port(
+    clk : in std_logic; 
+    sw_1 : in std_logic; 
+    sw_2 : in std_logic; 
+    sw_3 : in std_logic; 
+    sw_4 : in std_logic;  
+    sw_5 : in std_logic;
+    sw_6 : in std_logic; 
+    sw_7 : in std_logic; 
+    sw_8 : in std_logic; 
+    sw_9 : in std_logic; 
+    sw_10 : in std_logic; 
+    uart_rx_p : in std_logic;  
+    alt_buton : in std_logic; 
+    ust_buton : in std_logic; 
+    orta_buton : in std_logic; 
+    seven_seg : out std_logic_vector(7 downto 0); 
+    anode_o: out std_logic_vector(7 downto 0));
+end component;
+    constant cycle : time := 10ns  ; 
+    constant   c_hex12  : std_logic_vector(9 downto 0) := '1' & X"12" & '0'; 
+    constant   baud9600    :   time := 104.16us ;
+    constant   c_hex01  : std_logic_vector(9 downto 0) := '1' & X"01" & '0';
+    constant   c_hexaa  : std_logic_vector(9 downto 0) := '1' & X"0a" & '0';
+    constant   c_hex87  : std_logic_vector(9 downto 0) := '1' & X"87" & '0';
+    constant   c_hex02  : std_logic_vector(9 downto 0) := '1' & X"02" & '0';
+
+    signal clk :   std_logic := '1'; 
+    signal sw_1 :  std_logic := '0'; 
+    signal sw_2 :  std_logic := '0';
+    signal sw_3 :  std_logic := '0'; 
+    signal sw_4 :  std_logic := '0'; 
+    signal sw_5 :  std_logic := '0'; 
+    signal sw_6 :  std_logic := '0'; 
+    signal sw_7 :  std_logic := '0'; 
+    signal sw_8 :  std_logic := '0'; 
+    signal sw_9 :  std_logic := '0'; 
+    signal sw_10 :  std_logic := '0'; 
+    signal uart_rx_p :  std_logic := '0'; 
+    signal alt_buton :  std_logic := '0';
+    signal ust_buton :  std_logic := '0';
+    signal orta_buton :  std_logic := '0';
+    signal seven_seg :  std_logic_vector(7 downto 0); 
+    signal anode_o:  std_logic_vector(7 downto 0);
+begin
+UUT: top port map (
+    clk => clk,
+    sw_1 => sw_1, 
+    sw_2 => sw_2, 
+    sw_3 => sw_3,  
+    sw_4 => sw_4,   
+    sw_5 => sw_5,
+    sw_6 => sw_6,
+    sw_7 => sw_7,
+    sw_8 => sw_8,
+    sw_9 => sw_9,
+    sw_10 => sw_10,
+    uart_rx_p => uart_rx_p, 
+    alt_buton => alt_buton,   
+    ust_buton => ust_buton,  
+    orta_buton => orta_buton, 
+    seven_seg => seven_seg,  
+    anode_o => anode_o); 
+    
+clk <= not clk after cycle/2;
+ram_atama: process 
+begin
+    for i in 0 to 9 loop
+        uart_rx_p <= c_hexaa(i);
+        wait for baud9600;
+     end loop; 
+   wait for cycle;
+   for i in 0 to 9 loop
+   uart_rx_p <= c_hex01(i);
+   wait for baud9600;
+   end loop;            
+   wait for cycle;
+   for i in 0 to 9 loop
+   uart_rx_p <= c_hex12(i);
+   wait for baud9600;
+   end loop;
+   wait for baud9600;
+   sw_3 <= '1';
+   wait for cycle;
+   sw_3 <= '0'; 
+   wait for cycle;
+for i in 0 to 9 loop
+        uart_rx_p <= c_hexaa(i);
+        wait for baud9600;
+     end loop; 
+   wait for cycle;
+   for i in 0 to 9 loop
+   uart_rx_p <= c_hex02(i);
+   wait for baud9600;
+   end loop;            
+   wait for cycle;
+   for i in 0 to 9 loop
+   uart_rx_p <= c_hex87(i);
+   wait for baud9600;
+   end loop;
+   wait for baud9600;
+   sw_3 <= '1';
+   wait for cycle;
+   sw_3 <= '0'; 
+   wait for baud9600;
+   sw_2 <= '1';
+   wait for cycle;
+   sw_2 <= '0';
+   wait for 5cycle;
+   alt_buton <= '1';
+   wait for 300cycle;
+   alt_buton <= '0';
+   wait for cycle;
+   orta_buton <= '1';
+   wait for cycle;
+   orta_buton <= '0';
+   wait for 3cycle;
+   sw_2 <= '1';
+   wait for cycle;
+   sw_2 <= '0';
+   wait for 3cycle;
+   ust_buton <= '1';
+end process;                     
+end Behavioral;
+
+--"First, the sequence 0A 01 12 is sent via UART, which writes the value 12 to Address 1. When SW3 (which holds Address 2) is toggled, the 'tens' and 'ones' digits on the LED display remain 00.
+--Next, 0A 02 87 is sent to write the value 87 to Address 2. When SW3 is then toggled, the display shows 8 in the tens digit and 7 in the ones digit. Finally, when SW2 is toggled, the value
+--12 (previously written to Address 1) is displayed as 1 in the tens digit and 2 in the ones digit.
+
